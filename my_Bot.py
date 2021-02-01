@@ -74,4 +74,4 @@ async def on_member_join(member):
 async def on_member_remove(member):
     print(F'[member] leave!')
 
-bot.run("token")
+bot.run("Nzk4OTEyNTY3MDMyMDIxMDQz.X_77Tw._5oS18xkWxRs-gAxEO3TtARfZ6I")
