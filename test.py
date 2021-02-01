@@ -19,8 +19,6 @@ const
 util = require('util');
 const
 path = require('path');
-const
-{Readable} = require('stream');
 
 // // // // // // // // // // // // // // // // // // // // //
 // // // // // // // // / VARIA // // // // // // // // //
@@ -29,11 +27,39 @@ const
                           function
 necessary_dirs()
 {
+if (!fs.existsSync('./temp/')){
+fs.mkdirSync('./temp/');
+}
 if (!fs.existsSync('./data/')){
 fs.mkdirSync('./data/');
 }
 }
 necessary_dirs()
+
+function
+clean_temp()
+{
+const
+dd = './temp/';
+fs.readdir(dd, (err, files) = > {
+if (err)
+throw
+err;
+
+for (const file of files)
+{
+    fs.unlink(path.join(dd, file), err= > {
+    if (err)
+throw
+err;
+});
+}
+});
+}
+clean_temp(); // clean
+files
+at
+startup
 
 function
 sleep(ms)
@@ -45,26 +71,21 @@ Promise((resolve) = > {
 }
 
 async function
-convert_audio(input)
+convert_audio(infile, outfile)
 {
 try {
 // stereo to mono channel
-const data = new Int16Array(input)
+const data = new Int16Array(fs.readFileSync(infile))
 const ndata = new Int16Array(data.length / 2)
 for (let i = 0, j = 0; i < data.length; i += 4) {
 ndata[j++] = data[i]
 ndata[j++] = data[i+1]
 }
-return Buffer.
-from
-
-(ndata);
-} catch(e)
-{
+fs.writeFileSync(outfile, Buffer.from (ndata), 'binary')
+} catch (e) {
 console.log(e)
 console.log('convert_audio: ' + e)
-throw
-e;
+throw e;
 }
 }
 // // // // // // // // // // // // // // // // // // // // //
@@ -83,6 +104,14 @@ DISCORD_TOK = null;
 let
 WITAPIKEY = null;
 let
+TEXTANALYTICSKEY = null;
+let
+TEXTANALYTICSENDPOINT = null;
+let
+TRANSLATEKEY = null;
+let
+TRANSLATEENDPOINT = null;
+let
 SPOTIFY_TOKEN_ID = null;
 let
 SPOTIFY_TOKEN_SECRET = null;
@@ -90,33 +119,50 @@ SPOTIFY_TOKEN_SECRET = null;
 function
 loadConfig()
 {
-if (fs.existsSync(SETTINGS_FILE))
-{
-const
-CFG_DATA = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+if (fs.existsSync(SETTINGS_FILE)) {
+const CFG_DATA = JSON.parse( fs.readFileSync(SETTINGS_FILE, 'utf8') );
 DISCORD_TOK = CFG_DATA.discord_token;
 WITAPIKEY = CFG_DATA.wit_ai_token;
+TEXTANALYTICSKEY = CFG_DATA.text_analytics_key;
+TEXTANALYTICSENDPOINT = CFG_DATA.text_analytics_endpoint;
+TRANSLATEKEY = CFG_DATA.translate_key;
+TRANSLATEENDPOINT = CFG_DATA.translate_endpoint;
 } else {
 DISCORD_TOK = process.env.DISCORD_TOK;
 WITAPIKEY = process.env.WITAPIKEY;
+TEXTANALYTICSKEY = process.env.TEXTANALYTICSKEY;
+TEXTANALYTICSENDPOINT = process.env.TEXTANALYTICSENDPOINT;
+TRANSLATEKEY = process.env.TRANSLATEKEY;
+TRANSLATEENDPOINT = process.env.TRANSLATEENDPOINT;
 }
-if (!DISCORD_TOK | | !WITAPIKEY)
-throw 'failed loading config #113 missing keys!'
+
+console.log('TEXTANALYTICSKEY : ' + TEXTANALYTICSKEY)
+console.log('TEXTANALYTICSENDPOINT : ' + TEXTANALYTICSENDPOINT)
+console.log('TRANSLATEKEY : ' + TRANSLATEKEY)
+console.log('TRANSLATEENDPOINT : ' + TRANSLATEENDPOINT)
+
+if (!DISCORD_TOK | | !TEXTANALYTICSKEY)
+    throw
+    'failed loading config #113 missing keys!'
 
 }
 loadConfig()
 
-const https = require('https')
-function listWitAIApps(cb) {
-const options = {
-hostname: 'api.wit.ai',
-port: 443,
-path: '/apps?offset=0&limit=100',
-method: 'GET',
-headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer ' + WITAPIKEY,
-},
+const
+https = require('https')
+function
+listWitAIApps(cb)
+{
+const
+options = {
+    hostname: 'api.wit.ai',
+    port: 443,
+    path: '/apps?offset=0&limit=100',
+    method: 'GET',
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + WITAPIKEY,
+    },
 }
 
 const
@@ -142,16 +188,16 @@ req.end()
 function
 updateWitAIAppLang(appID, lang, cb)
 {
-    const
+const
 options = {
-hostname: 'api.wit.ai',
-port: 443,
-path: '/apps/' + appID,
-method: 'PUT',
-headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer ' + WITAPIKEY,
-},
+    hostname: 'api.wit.ai',
+    port: 443,
+    path: '/apps/' + appID,
+    method: 'PUT',
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + WITAPIKEY,
+    },
 }
 const
 data = JSON.stringify({
@@ -193,7 +239,7 @@ Discord.Client()
 if (process.env.DEBUG)
 discordClient.on('debug', console.debug);
 discordClient.on('ready', () = > {
-console.log(`Logged in as ${discordClient.user.tag}!`)
+    console.log(`Logged in as ${discordClient.user.tag}!`)
 })
 discordClient.login(DISCORD_TOK)
 
@@ -216,8 +262,62 @@ const
 guildMap = new
 Map();
 
+// 情感分析
+"use strict";
+
+const
+{TextAnalyticsClient, AzureKeyCredential} = require("@azure/ai-text-analytics");
+const
+textAnalyticsClient = new
+TextAnalyticsClient(TEXTANALYTICSENDPOINT, new
+AzureKeyCredential(TEXTANALYTICSKEY));
+
+async function
+sentimentAnalysis(msg)
+{
+
+const
+sentimentInput = [];
+sentimentInput[0] = msg;
+console.log(sentimentInput)
+const
+sentimentResult = await textAnalyticsClient.analyzeSentiment(sentimentInput);
+analysisResult = ''
+sentimentResult.forEach(document= > {
+// console.log(`ID: ${document.id}
+`);
+analysisResult += `\n\tDocument
+Sentiment: ${document.sentiment}
+`;
+analysisResult += `\n\tDocument
+Scores: `;
+analysisResult += `\n\t\tPositive: ${document.confidenceScores.positive.toFixed(2)} \tNegative: ${
+    document.confidenceScores.negative.toFixed(2)} \tNeutral: ${document.confidenceScores.neutral.toFixed(2)}
+`;
+// console.log(`\tSentences
+Sentiment(${document.sentences.length}):`);
+// document.sentences.forEach(sentence= > {
+   // console.log(`\t\tSentence
+sentiment: ${sentence.sentiment}
+`)
+// console.log(`\t\tSentences
+Scores: `);
+// console.log(`\t\tPositive: ${sentence.confidenceScores.positive.toFixed(2)} \tNegative: ${
+    sentence.confidenceScores.negative.toFixed(2)} \tNeutral: ${sentence.confidenceScores.neutral.toFixed(2)}
+`);
+//});
+});
+
+return analysisResult
+}
+// 情感分析
+
 discordClient.on('message', async (msg) = > {
 try {
+analysisResult = '';
+if (!('translation :' in msg)) {
+analysisResult = await sentimentAnalysis(msg.content.trim().toLowerCase())
+}
 if (!('guild' in msg) | | !msg.guild)
 return; // prevent
 private
@@ -240,6 +340,7 @@ if (guildMap.has(mapKey)) {
 let val = guildMap.get(mapKey);
 if (val.voice_Channel) val.voice_Channel.leave()
 if (val.voice_Connection) val.voice_Connection.disconnect()
+if (val.musicYTStream) val.musicYTStream.destroy()
 guildMap.delete(mapKey)
 msg.reply("Disconnected.")
 } else {
@@ -274,6 +375,67 @@ msg.reply('Error: ' + data.error)
 }
 })
 }
+
+// sentimentAnalysis(msg.content.trim().toLowerCase());
+
+// 翻譯
+if (msg.content.trim().toLowerCase().indexOf('translation :') == -1)
+{
+
+    const
+axios = require('axios').default;
+const
+{v4: uuidv4} = require('uuid');
+
+var
+subscriptionKey = TRANSLATEKEY;
+var
+endpoint_translate = TRANSLATEENDPOINT;
+
+// Add
+your
+location, also
+known as region.The
+default is
+global.
+// This is required if using
+a
+Cognitive
+Services
+resource.
+    var
+location = "global";
+
+axios({
+baseURL: endpoint_translate,
+url: '/translate',
+method: 'post',
+headers: {
+    'Ocp-Apim-Subscription-Key': subscriptionKey,
+    'Ocp-Apim-Subscription-Region': location,
+    'Content-type': 'application/json',
+    'X-ClientTraceId': uuidv4().toString()
+},
+params: {
+    'api-version': '3.0',
+    'from': 'en',
+    'to': ['zh-Hant']
+},
+data: [{
+    'text': msg.content.trim().toLowerCase()
+}],
+responseType: 'json'
+}).then(function(response)
+{
+// console.log(JSON.stringify(response.data, null, 4));
+position = JSON.stringify(response.data, null, 4).indexOf('text')
+len = JSON.stringify(response.data, null, 4).length
+msg.reply('translation : ' + JSON.stringify(response.data, null, 4).substring(position + 4, len - 65) + analysisResult)
+})
+
+}
+// 翻譯
+
 } catch(e)
 {
     console.log('discordClient message: ' + e)
@@ -292,6 +454,9 @@ out += PREFIX + 'leave\n';
 out += '```'
 return out;
 }
+
+const
+{Readable} = require('stream');
 
 const
 SILENCE_FRAME = Buffer.
@@ -325,6 +490,11 @@ guildMap.set(mapKey, {
     'text_Channel': text_Channel,
     'voice_Channel': voice_Channel,
     'voice_Connection': voice_Connection,
+    'musicQueue': [],
+    'musicDispatcher': null,
+    'musicYTStream': null,
+    'currentPlayingTitle': null,
+    'currentPlayingQuery': null,
     'debug': false,
 });
 speak_impl(voice_Connection, mapKey)
@@ -333,7 +503,7 @@ if (e)
 console.log(e);
 guildMap.delete(mapKey);
 })
-msg.reply('connected!')
+msg.reply('David connected!')
 } catch(e)
 {
 console.log('connect: ' + e)
@@ -343,17 +513,56 @@ e;
 }
 }
 
+const
+sdk = require("microsoft-cognitiveservices-speech-sdk");
+const
+speechConfig = sdk.SpeechConfig.fromSubscription("f13676adf97e41d98019878715830bb7", "southcentralus");
+
+function
+fromFile(outfile, mapKey)
+{
+    let
+pushStream = sdk.AudioInputStream.createPushStream();
+
+fs.createReadStream(outfile).on('data', function(arrayBuffer)
+{
+    pushStream.write(arrayBuffer.slice());
+}).on('end', function()
+{
+    pushStream.close();
+});
+
+let
+audioConfig = sdk.AudioConfig.fromStreamInput(pushStream);
+let
+recognizer = new
+sdk.SpeechRecognizer(speechConfig, audioConfig);
+recognizer.recognizeOnceAsync(result= > {
+    console.log(result);
+let
+val = guildMap.get(mapKey);
+val.text_Channel.send(`RECOGNIZED: Text =${result.duration}
+`)
+recognizer.close();
+});
+}
 
 function
 speak_impl(voice_Connection, mapKey)
 {
     voice_Connection.on('speaking', async(user, speaking) = > {
-if (speaking.bitfield == 0 | | user.bot)
+if (speaking.bitfield == 0 / * | | user.bot * /)
 {
 return
 }
 console.log(`I
 'm listening to ${user.username}`)
+
+const
+filename = './temp/audio_' + mapKey + '_' + user.username.replace( / [ ^ a - z0 - 9] / gi, '_').toLowerCase() + '_' + Date.now() + '.tmp';
+let
+ws = fs.createWriteStream(filename);
+
 // this
 creates
 a
@@ -365,41 +574,70 @@ KHz
 stream
 const
 audioStream = voice_Connection.receiver.createStream(user, {mode: 'pcm'})
+audioStream.pipe(ws)
+
 audioStream.on('error', (e) = > {
     console.log('audioStream: ' + e)
 });
-let
-buffer = [];
-audioStream.on('data', (data) = > {
-    buffer.push(data)
-})
+ws.on('error', (e) = > {
+    console.log('ws error: ' + e)
+});
 audioStream.on('end', async () = > {
-    buffer = Buffer.concat(buffer)
+    const
+stats = fs.statSync(filename);
 const
-duration = buffer.length / 48000 / 4;
+fileSizeInBytes = stats.size;
+const
+duration = fileSizeInBytes / 48000 / 4;
 console.log("duration: " + duration)
 
-if (duration < 1.0 | | duration > 19)
-{ // 20
-seconds
-max
-dur
-console.log("TOO SHORT / TOO LONG; SKPPING")
+if (duration < 0.5 | | duration > 19)
+{
+    console.log("TOO SHORT / TOO LONG; SKPPING")
+fs.unlinkSync(filename)
 return;
 }
 
-try {
-let new_buffer = await convert_audio(buffer)
-let out = await transcribe(new_buffer);
-if (out != null)
-process_commands_query(out, mapKey, user);
-} catch (e) {
-console.log('tmpraw rename: ' + e)
-}
+const
+newfilename = filename.replace('.tmp', '.raw');
+// fs.rename(filename, newfilename, async (err) = > {
+                                                    // if (err)
+{
+// console.log('ERROR270:' + err)
+// fs.unlinkSync(filename)
+//} else {
+         // let
+val = guildMap.get(mapKey)
+      // const
+infile = newfilename;
+// const
+outfile = newfilename + '.wav';
+// try {
+// await convert_audio(infile, outfile);
+// fromFile(infile.replace('.tmp', '.wav'), mapKey)
+// fromFile(outfile, mapKey)
+// let out = await transcribe(outfile);
+// if (out != null)
+// process_commands_query(out, mapKey, user);
+// if (!val.debug) {
+// fs.unlinkSync(infile)
+// fs.unlinkSync(outfile)
+//}
+//} catch (e) {
+// console.log('tmpraw rename: ' + e)
+// if (!val.debug) {
+// fs.unlinkSync(infile)
+// fs.unlinkSync(outfile)
+//}
+//}
+//}
+
+//});
 
 })
 })
 }
+
 
 function
 process_commands_query(txt, mapKey, user)
@@ -416,11 +654,11 @@ val.text_Channel.send(user.username + ': ' + txt)
 // // // // // // // // SPEECH // // // // // // // // //
                         // // // // // // // // // // // // // // // // // // // // //
 async function
-transcribe(buffer)
+transcribe(file)
 {
 
-return transcribe_witai(buffer)
-// return transcribe_gspeech(buffer)
+return transcribe_witai(file)
+// return transcribe_gspeech(file)
 }
 
 // WitAI
@@ -429,7 +667,7 @@ witAI_lastcallTS = null;
 const
 witClient = require('node-witai-speech');
 async function
-transcribe_witai(buffer)
+transcribe_witai(file)
 {
 try {
 // ensure we do not send more than one request per second
@@ -449,7 +687,7 @@ now = Math.floor(new Date());
 try {
 console.log('transcribe_witai')
 const extractSpeechIntent = util.promisify(witClient.extractSpeechIntent);
-var stream = Readable.from (buffer);
+var stream = fs.createReadStream(file);
 const contenttype = "audio/raw;encoding=signed-integer;bits=16;rate=48k;endian=little"
 const output = await extractSpeechIntent(WITAPIKEY, stream, contenttype)
 witAI_lastcallTS = Math.floor(new Date());
@@ -479,11 +717,12 @@ keyFilename: 'gspeech_key.json'
 });
 
 async function
-transcribe_gspeech(buffer)
+transcribe_gspeech(file)
 {
 try {
 console.log('transcribe_gspeech')
-const bytes = buffer.toString('base64');
+const rfile = fs.readFileSync(file);
+const bytes = rfile.toString('base64');
 const audio = {
 content: bytes,
 };
